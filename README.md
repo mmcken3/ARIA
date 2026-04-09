@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ARIA
 
-## Getting Started
+A self-hosted, open source personal AI operating system. ARIA combines a persistent AI with deep integrations across email, calendar, and tasks — surfacing a unified view of your work and taking action on your behalf, proactively and on demand.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## What it does
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Chat-first interface** — Talk to ARIA about your work. It already knows your tasks, remembered context, and (once connected) your inbox and calendar.
+- **Task management** — Kanban board and list view with projects, priorities, and due dates. ARIA can create and update tasks directly from chat.
+- **Persistent memory** — ARIA remembers facts across sessions. You can view and delete what it knows in Settings.
+- **Proactive layer** — Background jobs (coming soon) poll Gmail and Calendar and surface what matters before you ask.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Next.js 16 · TypeScript · Better Auth · Neon PostgreSQL · Drizzle ORM · Anthropic Claude · Tailwind CSS
 
-## Learn More
+## Getting started
 
-To learn more about Next.js, take a look at the following resources:
+See [docs/setup.md](docs/setup.md) for full setup instructions including environment variables, database setup, and Vercel deployment.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+See [docs/architecture.md](docs/architecture.md) for a full breakdown of what's built, what's planned, and the patterns used throughout the codebase.
 
-## Deploy on Vercel
+## API
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+OpenAPI 3.1 spec and interactive Scalar UI available at `/api/docs` when running locally.

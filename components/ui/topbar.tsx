@@ -28,10 +28,15 @@ export default function Topbar() {
 
   return (
     <header className="h-[52px] flex items-center justify-between px-6 border-b border-[var(--border)] shrink-0">
-      {/* Page title */}
-      <span className="text-sm font-medium text-[var(--text-secondary)] tracking-[-0.01em]">
-        {title}
-      </span>
+      {/* Mobile: ARIA logotype (sidebar hidden). Desktop: page title. */}
+      <div>
+        <span className="md:hidden font-display text-[17px] text-[var(--text-primary)] leading-none tracking-tight">
+          ◆ ARIA
+        </span>
+        <span className="hidden md:block text-sm font-medium text-[var(--text-secondary)] tracking-[-0.01em]">
+          {title}
+        </span>
+      </div>
 
       {/* Right side */}
       <div className="flex items-center gap-4">

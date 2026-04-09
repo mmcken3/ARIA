@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { LayoutDashboard, List, Plus, ChevronDown, Check, FolderOpen, Trash2, Pencil } from "lucide-react";
 import type { Task } from "@/lib/api/tasks/schema";
 import type { Project } from "@/lib/api/projects/schema";
@@ -16,6 +16,11 @@ interface TasksViewProps {
 
 export default function TasksView({ initialTasks, initialProjects }: TasksViewProps) {
   const [view, setView] = useState<View>("board");
+
+  // Default to list on mobile — board is hard to use on small screens
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) setView("list");
+  }, []);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);

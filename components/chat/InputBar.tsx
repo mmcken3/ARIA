@@ -3,6 +3,18 @@
 import { useRef, useState, useEffect } from "react";
 import { ArrowUp, Loader2 } from "lucide-react";
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
+
 const SLASH_COMMANDS = [
   { command: "/task",  description: "Create or update a task" },
   { command: "/brief", description: "Get your morning brief" },
@@ -19,6 +31,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   const [showSlashHint, setShowSlashHint] = useState(false);
   const [selectedCommand, setSelectedCommand] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isMobile = useIsMobile();
 
   // Auto-resize textarea
   useEffect(() => {
@@ -63,10 +76,15 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
       }
     }
 
-    // CMD+Enter or Ctrl+Enter to send
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      submit();
+    // Send: plain Enter on mobile, CMD/Ctrl+Enter on desktop
+    if (e.key === "Enter") {
+      if (isMobile && !e.shiftKey) {
+        e.preventDefault();
+        submit();
+      } else if (!isMobile && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        submit();
+      }
     }
   }
 
@@ -98,6 +116,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
     <div
       style={{
         padding: "12px 20px 16px",
+        paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)",
         background: "var(--bg-primary)",
         borderTop: "1px solid var(--border)",
         flexShrink: 0,
@@ -248,7 +267,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           transition: "color 150ms, opacity 150ms",
         }}
       >
-        {disabled ? "ARIA is responding…" : "⌘↵ to send · / for commands"}
+        {disabled ? "ARIA is responding…" : isMobile ? "↵ to send · / for commands" : "⌘↵ to send · / for commands"}
       </p>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

@@ -1,5 +1,7 @@
 # ARIA
 
+*Currently a Work In Progress, but making solid headway and ready for use soon!*
+
 A self-hosted, open source personal AI operating system. ARIA combines a persistent AI with deep integrations across email, calendar, and tasks — surfacing a unified view of your work and taking action on your behalf, proactively and on demand.
 
 ---

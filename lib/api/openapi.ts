@@ -334,6 +334,137 @@ export const openApiSpec = {
         },
       },
     },
+    "/api/integrations/status": {
+      get: {
+        operationId: "getIntegrationStatus",
+        summary: "Get integration connection status",
+        description:
+          "Returns provider-grouped connection status. Each provider has one OAuth connection row; features (gcal, gmail) are derived from which scopes are present.",
+        tags: ["Integrations"],
+        security: [{ cookieAuth: [] }],
+        responses: {
+          "200": {
+            description: "Integration status",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    connections: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/ProviderConnection" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Unauthorized" },
+        },
+      },
+    },
+    "/api/integrations/connect": {
+      get: {
+        operationId: "connectIntegration",
+        summary: "Initiate OAuth connect flow",
+        description:
+          "Redirects the user to Google's OAuth consent screen requesting all scopes for the given provider. Sets a short-lived state cookie for CSRF protection. On success, redirects to /settings?connected={provider}.",
+        tags: ["Integrations"],
+        security: [{ cookieAuth: [] }],
+        parameters: [
+          {
+            name: "provider",
+            in: "query",
+            required: true,
+            schema: { type: "string", enum: ["google"] },
+            description: "OAuth provider to connect",
+          },
+        ],
+        responses: {
+          "302": { description: "Redirect to Google OAuth consent screen" },
+          "400": { description: "Unknown provider" },
+          "401": { description: "Unauthorized" },
+        },
+      },
+    },
+    "/api/integrations/callback": {
+      get: {
+        operationId: "integrationOAuthCallback",
+        summary: "OAuth callback handler",
+        description:
+          "Receives the OAuth authorization code from Google, validates the state cookie, exchanges the code for tokens, upserts the integration_connections row, then redirects to /settings?connected={provider}. On error, redirects to /settings?connect_error={reason}.",
+        tags: ["Integrations"],
+        parameters: [
+          { name: "code",  in: "query", schema: { type: "string" } },
+          { name: "state", in: "query", schema: { type: "string" } },
+          { name: "error", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          "302": { description: "Redirect to /settings after token capture" },
+          "302 (error)": { description: "Redirect to /settings?connect_error=... on failure" },
+        },
+      },
+    },
+    "/api/integrations/disconnect": {
+      post: {
+        operationId: "disconnectIntegration",
+        summary: "Disconnect an integration provider",
+        description:
+          "Marks the integration_connections row as disconnected. Affects all features under that provider (e.g. disconnecting google disables both gcal and gmail). Background sync jobs will stop for this user until reconnected.",
+        tags: ["Integrations"],
+        security: [{ cookieAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["provider"],
+                properties: {
+                  provider: { type: "string", enum: ["google"], description: "Provider to disconnect" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Disconnected",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { ok: { type: "boolean" } },
+                },
+              },
+            },
+          },
+          "400": { description: "provider required" },
+          "401": { description: "Unauthorized" },
+        },
+      },
+    },
+    "/api/dashboard": {
+      get: {
+        operationId: "getDashboardData",
+        summary: "Get dashboard integration data",
+        description:
+          "Returns calendar events and important email messages for the dashboard. Only includes data for active, connected integrations. Calendar: next 5 upcoming events. Email: top 4 messages by relevance score (≥ 0.3).",
+        tags: ["Dashboard"],
+        security: [{ cookieAuth: [] }],
+        responses: {
+          "200": {
+            description: "Dashboard data",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DashboardResponse" },
+              },
+            },
+          },
+          "401": { description: "Unauthorized" },
+        },
+      },
+    },
     "/api/tasks/{id}/activity": {
       get: {
         operationId: "getTaskActivity",
@@ -476,6 +607,99 @@ export const openApiSpec = {
           id: { type: "string" },
           content: { type: "string", description: "The remembered fact" },
           createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      CalendarAttendee: {
+        type: "object",
+        required: ["email"],
+        properties: {
+          email: { type: "string", format: "email" },
+          name:  { type: "string", nullable: true },
+          responseStatus: {
+            type: "string",
+            enum: ["accepted", "declined", "tentative", "needsAction"],
+            nullable: true,
+          },
+        },
+      },
+      FeatureStatus: {
+        type: "object",
+        required: ["feature", "displayName", "hasScope"],
+        properties: {
+          feature:     { type: "string", enum: ["gcal", "gmail"], description: "Feature identifier" },
+          displayName: { type: "string" },
+          hasScope:    { type: "boolean", description: "Whether the required OAuth scope is present on the connection" },
+        },
+      },
+      ProviderConnection: {
+        type: "object",
+        required: ["provider", "displayName", "connected", "features"],
+        properties: {
+          provider:     { type: "string", enum: ["google"], description: "OAuth provider identifier" },
+          displayName:  { type: "string" },
+          connected:    { type: "boolean", description: "True when an active connection row exists for this provider" },
+          lastSyncedAt: { type: "string", format: "date-time", nullable: true },
+          features: {
+            type: "array",
+            items: { $ref: "#/components/schemas/FeatureStatus" },
+            description: "Individual feature capability status derived from granted OAuth scopes",
+          },
+        },
+      },
+      DashboardCalendarEvent: {
+        type: "object",
+        required: ["id", "title", "startAt", "endAt", "isAllDay", "attendeeCount", "status"],
+        properties: {
+          id:            { type: "string" },
+          title:         { type: "string" },
+          startAt:       { type: "string", format: "date-time" },
+          endAt:         { type: "string", format: "date-time" },
+          isAllDay:      { type: "boolean" },
+          location:      { type: "string", nullable: true },
+          attendeeCount: { type: "integer" },
+          status:        { type: "string", enum: ["confirmed", "tentative", "cancelled"] },
+        },
+      },
+      DashboardEmailMessage: {
+        type: "object",
+        required: ["id", "fromAddress", "subject", "isRead", "relevanceScore", "receivedAt"],
+        properties: {
+          id:             { type: "string" },
+          fromName:       { type: "string", nullable: true },
+          fromAddress:    { type: "string", format: "email" },
+          subject:        { type: "string" },
+          snippet:        { type: "string", nullable: true, description: "≤200 chars" },
+          isRead:         { type: "boolean" },
+          relevanceScore: { type: "number", minimum: 0, maximum: 1 },
+          receivedAt:     { type: "string", format: "date-time" },
+        },
+      },
+      DashboardResponse: {
+        type: "object",
+        required: ["calendar", "email"],
+        properties: {
+          calendar: {
+            type: "object",
+            properties: {
+              connected: { type: "boolean" },
+              events: {
+                type: "array",
+                items: { $ref: "#/components/schemas/DashboardCalendarEvent" },
+                description: "Next 5 upcoming events, empty array when not connected",
+              },
+            },
+          },
+          email: {
+            type: "object",
+            properties: {
+              connected: { type: "boolean" },
+              messages: {
+                type: "array",
+                items: { $ref: "#/components/schemas/DashboardEmailMessage" },
+                description: "Top 4 messages by relevance (score ≥ 0.3), empty array when not connected",
+              },
+            },
+          },
         },
       },
       TaskActivity: {

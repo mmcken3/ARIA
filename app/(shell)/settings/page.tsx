@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trash2, Mail, Calendar, Brain, Palette, Plug } from "lucide-react";
+import { Trash2, Mail, Calendar, Brain, Palette, Plug, CheckCircle2, Loader2 } from "lucide-react";
 
 // ─── Relative time ────────────────────────────────────────────────────────────
 
@@ -22,6 +22,20 @@ function relativeTime(iso: string): string {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type MemoryEntry = { id: string; content: string; createdAt: string };
+
+type FeatureStatus = {
+  feature: string;
+  displayName: string;
+  hasScope: boolean;
+};
+
+type ProviderConnection = {
+  provider: string;
+  displayName: string;
+  connected: boolean;
+  lastSyncedAt: string | null;
+  features: FeatureStatus[];
+};
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -273,83 +287,252 @@ function MemorySection() {
 
 // ─── Integrations section ─────────────────────────────────────────────────────
 
-const INTEGRATIONS = [
-  { id: "gmail", label: "Gmail", icon: Mail, description: "Read and send email with full context" },
-  { id: "gcal", label: "Google Calendar", icon: Calendar, description: "Events, reminders, and scheduling context" },
-];
+function GoogleIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  );
+}
+
+const PROVIDER_ICONS: Record<string, React.ElementType> = {
+  google: GoogleIcon,
+};
+
+const FEATURE_ICONS: Record<string, React.ElementType> = {
+  gcal: Calendar,
+  gmail: Mail,
+};
 
 function IntegrationsSection() {
+  const [connections, setConnections] = useState<ProviderConnection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [justConnected, setJustConnected] = useState<string | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    const res = await fetch("/api/integrations/status");
+    const data = await res.json();
+    console.log("[integrations] status response:", res.status, data);
+    setConnections(data.connections ?? []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  // Detect ?connected=provider after returning from OAuth — no useSearchParams needed
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("connected");
+    if (connected) {
+      setJustConnected(connected);
+      const t = setTimeout(() => setJustConnected(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  async function handleDisconnect(provider: string) {
+    setDisconnecting(provider);
+    await fetch("/api/integrations/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
+    });
+    await fetchStatus();
+    setDisconnecting(null);
+  }
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          height: "96px",
+          borderRadius: "8px",
+          background: "var(--bg-surface)",
+          animation: "shimmer 1.4s ease-in-out infinite",
+        }}
+      />
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-      {INTEGRATIONS.map(({ id, label, icon: Icon, description }) => (
-        <div
-          key={id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "14px",
-            padding: "13px 16px",
-            borderRadius: "8px",
-            border: "1px solid var(--border)",
-            background: "var(--bg-secondary)",
-          }}
-        >
+      {connections.map(({ provider, displayName, connected, lastSyncedAt, features }) => {
+        const isJustConnected = justConnected === provider;
+        const isDisconnecting = disconnecting === provider;
+
+        return (
           <div
+            key={provider}
             style={{
-              width: "30px",
-              height: "30px",
-              borderRadius: "7px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
+              borderRadius: "8px",
+              border: `1px solid ${connected ? "var(--accent)" : "var(--border)"}`,
+              background: "var(--bg-secondary)",
+              overflow: "hidden",
+              transition: "border-color 300ms",
+              opacity: isDisconnecting ? 0.6 : 1,
             }}
           >
-            <Icon size={14} strokeWidth={1.75} style={{ color: "var(--text-muted)" }} />
-          </div>
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: "13.5px", fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.2 }}>
-              {label}
-            </p>
-            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>{description}</p>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
-            <span
+            {/* Provider header row */}
+            <div
               style={{
-                fontSize: "11px",
-                color: "var(--text-muted)",
-                padding: "3px 8px",
-                borderRadius: "100px",
-                border: "1px solid var(--border)",
-                background: "var(--bg-surface)",
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                padding: "13px 16px",
               }}
             >
-              Not connected
-            </span>
-            <button
-              disabled
-              title="Coming soon"
+              <div
+                style={{
+                  width: "30px",
+                  height: "30px",
+                  borderRadius: "7px",
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {(() => { const PIcon = PROVIDER_ICONS[provider] ?? Plug; return <PIcon size={14} />; })()}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: "13.5px", fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.2 }}>
+                  {displayName}
+                </p>
+                <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+                  {connected && lastSyncedAt
+                    ? `Last synced ${relativeTime(lastSyncedAt)}`
+                    : "Calendar and Gmail"}
+                </p>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+                {isJustConnected ? (
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      fontSize: "11px",
+                      color: "var(--success)",
+                      padding: "3px 8px",
+                      borderRadius: "100px",
+                      border: "1px solid var(--success)",
+                    }}
+                  >
+                    <CheckCircle2 size={11} strokeWidth={2} />
+                    Connected
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: connected ? "var(--accent)" : "var(--text-muted)",
+                      padding: "3px 8px",
+                      borderRadius: "100px",
+                      border: `1px solid ${connected ? "var(--accent)" : "var(--border)"}`,
+                      background: "var(--bg-surface)",
+                      transition: "color 300ms, border-color 300ms",
+                    }}
+                  >
+                    {connected ? "Connected" : "Not connected"}
+                  </span>
+                )}
+
+                {connected ? (
+                  <button
+                    onClick={() => handleDisconnect(provider)}
+                    disabled={isDisconnecting}
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: "var(--danger)",
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--danger)",
+                      background: "transparent",
+                      cursor: isDisconnecting ? "not-allowed" : "pointer",
+                      opacity: isDisconnecting ? 0.5 : 1,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      transition: "opacity 150ms",
+                    }}
+                  >
+                    {isDisconnecting && <Loader2 size={11} strokeWidth={2} style={{ animation: "spin 1s linear infinite" }} />}
+                    Disconnect
+                  </button>
+                ) : (
+                  <a
+                    href={`/api/integrations/connect?provider=${provider}`}
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: "var(--accent)",
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--accent)",
+                      background: "transparent",
+                      textDecoration: "none",
+                      display: "inline-block",
+                    }}
+                  >
+                    Connect
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Feature sub-rows */}
+            <div
               style={{
-                fontSize: "12px",
-                fontWeight: 500,
-                color: "var(--text-muted)",
-                padding: "5px 12px",
-                borderRadius: "6px",
-                border: "1px solid var(--border)",
-                background: "transparent",
-                cursor: "not-allowed",
-                opacity: 0.5,
+                borderTop: "1px solid var(--border)",
+                padding: "8px 16px",
+                display: "flex",
+                gap: "16px",
               }}
             >
-              Connect
-            </button>
+              {features.map(({ feature, displayName: featureLabel, hasScope }) => {
+                const FIcon = FEATURE_ICONS[feature] ?? Plug;
+                return (
+                  <div
+                    key={feature}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FIcon
+                      size={12}
+                      strokeWidth={1.75}
+                      style={{ color: hasScope ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: hasScope ? "var(--text-primary)" : "var(--text-muted)",
+                      }}
+                    >
+                      {featureLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

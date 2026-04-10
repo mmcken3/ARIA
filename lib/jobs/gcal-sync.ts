@@ -19,7 +19,7 @@ export const gcalSyncJob = inngest.createFunction(
   {
     id: "gcal-sync",
     name: "Google Calendar Sync",
-    triggers: [{ cron: "*/3 * * * *" }],
+    triggers: [{ cron: "*/10 * * * *" }],
     // Prevent overlapping runs if one is still processing when the next fires
     concurrency: { limit: 1 },
   },

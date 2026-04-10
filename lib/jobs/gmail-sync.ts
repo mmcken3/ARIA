@@ -19,7 +19,7 @@ export const gmailSyncJob = inngest.createFunction(
   {
     id: "gmail-sync",
     name: "Gmail Sync",
-    triggers: [{ cron: "*/3 * * * *" }],
+    triggers: [{ cron: "*/10 * * * *" }],
     concurrency: { limit: 1 },
   },
   async ({ step }) => {

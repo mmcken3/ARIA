@@ -2,6 +2,8 @@ import type { Tool } from "@anthropic-ai/sdk/resources/messages";
 import { createTask, updateTask, deleteTask, listTasks } from "@/lib/db/queries/tasks";
 import { createProject, listProjects, DuplicateProjectNameError } from "@/lib/db/queries/projects";
 import { writeMemory, deleteMemory, listMemory } from "@/lib/db/queries/memory";
+import { getUpcomingEvents } from "@/lib/db/queries/integrations";
+import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "@/lib/integrations/google-calendar/write";
 
 // ─── Tool definitions (sent to Claude) ───────────────────────────────────────
 
@@ -112,10 +114,70 @@ export const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "list_calendar_events",
+    description:
+      "Fetch upcoming calendar events from the local database. Use this to find an event's externalId before updating or deleting it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Max events to return (default 20)" },
+      },
+    },
+  },
+  {
+    name: "create_calendar_event",
+    description:
+      "Create a new event on the user's Google Calendar. Use when they ask to schedule, book, or block time for something. Google automatically sends invites to attendees.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title:       { type: "string",  description: "Event title" },
+        startAt:     { type: "string",  description: "Start time as ISO 8601 (e.g. 2026-04-15T14:00:00)" },
+        endAt:       { type: "string",  description: "End time as ISO 8601" },
+        isAllDay:    { type: "boolean", description: "True for all-day events — startAt/endAt should be YYYY-MM-DD dates" },
+        description: { type: "string",  description: "Optional event description or notes" },
+        location:    { type: "string",  description: "Optional location or meeting link" },
+        attendees:   { type: "array", items: { type: "string" }, description: "Email addresses to invite" },
+      },
+      required: ["title", "startAt", "endAt"],
+    },
+  },
+  {
+    name: "update_calendar_event",
+    description:
+      "Update an existing Google Calendar event. Use list_calendar_events first to get the externalId and current attendees. When adding an invitee, include all existing attendee emails plus the new one in the attendees array — the list replaces the existing one.",
+    input_schema: {
+      type: "object",
+      properties: {
+        externalId:  { type: "string",  description: "Google Calendar event ID (from list_calendar_events)" },
+        title:       { type: "string" },
+        startAt:     { type: "string",  description: "New start time as ISO 8601" },
+        endAt:       { type: "string",  description: "New end time as ISO 8601" },
+        isAllDay:    { type: "boolean" },
+        description: { type: "string" },
+        location:    { type: "string" },
+        attendees:   { type: "array", items: { type: "string" }, description: "Full attendee list (replaces existing). Include current attendees when adding someone." },
+      },
+      required: ["externalId"],
+    },
+  },
+  {
+    name: "delete_calendar_event",
+    description:
+      "Delete an event from Google Calendar. Only use when the user explicitly asks to cancel or remove an event. Use list_calendar_events first to get the externalId.",
+    input_schema: {
+      type: "object",
+      properties: {
+        externalId: { type: "string", description: "Google Calendar event ID (from list_calendar_events)" },
+      },
+      required: ["externalId"],
+    },
+  },
 ];
 
 // Tools that are read-only — no UI card shown for these
-export const SILENT_TOOLS = new Set(["list_tasks", "list_projects", "list_memory"]);
+export const SILENT_TOOLS = new Set(["list_tasks", "list_projects", "list_memory", "list_calendar_events"]);
 
 // ─── Tool result type ─────────────────────────────────────────────────────────
 
@@ -200,6 +262,60 @@ export async function executeTool(
       case "list_memory": {
         const entries = await listMemory(userId);
         return { ok: true, data: entries };
+      }
+
+      case "list_calendar_events": {
+        const events = await getUpcomingEvents(userId, {
+          limit: (input.limit as number | undefined) ?? 20,
+        });
+        return {
+          ok: true,
+          data: events.map((e) => ({
+            externalId: e.externalId,
+            title:      e.title,
+            startAt:    e.startAt,
+            endAt:      e.endAt,
+            isAllDay:   e.isAllDay,
+            location:   e.location,
+            status:     e.status,
+            attendees:  ((e.attendees ?? []) as Array<{ email: string; name?: string }>).map((a) => a.email),
+          })),
+        };
+      }
+
+      case "create_calendar_event": {
+        const result = await createCalendarEvent(userId, {
+          title:       input.title as string,
+          startAt:     input.startAt as string,
+          endAt:       input.endAt as string,
+          isAllDay:    (input.isAllDay as boolean | undefined) ?? false,
+          description: input.description as string | undefined,
+          location:    input.location as string | undefined,
+          attendees:   input.attendees as string[] | undefined,
+        });
+        return { ok: true, data: result };
+      }
+
+      case "update_calendar_event": {
+        const result = await updateCalendarEvent(
+          userId,
+          input.externalId as string,
+          {
+            title:       input.title as string | undefined,
+            startAt:     input.startAt as string | undefined,
+            endAt:       input.endAt as string | undefined,
+            isAllDay:    input.isAllDay as boolean | undefined,
+            description: input.description as string | undefined,
+            location:    input.location as string | undefined,
+            attendees:   input.attendees as string[] | undefined,
+          }
+        );
+        return { ok: true, data: result };
+      }
+
+      case "delete_calendar_event": {
+        const result = await deleteCalendarEvent(userId, input.externalId as string);
+        return { ok: true, data: result };
       }
 
       default:

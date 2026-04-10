@@ -11,6 +11,8 @@ export interface AIMessage {
 export interface AIContext {
   tasks: Task[];
   memories: MemoryEntry[];
+  calendarSummary: string | null;
+  emailSummary: string | null;
 }
 
 // Events emitted as NDJSON lines in the response stream

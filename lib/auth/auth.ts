@@ -1,8 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import * as schema from "@/lib/db/schema";
+import { upsertIntegrationConnection } from "@/lib/db/queries/integrations";
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 // self-hosted: single-user, gated by ALLOWED_EMAIL env var (default)
@@ -45,9 +46,42 @@ assertAuthSecret();
 
 const mode = getMode();
 
-// Build mode-specific database hooks.
+// ─── Token capture helper ─────────────────────────────────────────────────────
+// Called in session.create.after — by then Better Auth has already written the
+// OAuth tokens to the accounts table, so we can read and encrypt them.
+// Better Auth does not support account.create/update hooks, only user + session.
+
+async function captureGoogleTokensForUser(userId: string): Promise<void> {
+  try {
+    const account = await db.query.accounts.findFirst({
+      where: and(
+        eq(schema.accounts.userId, userId),
+        eq(schema.accounts.providerId, "google")
+      ),
+    });
+    if (!account?.accessToken || !account.refreshToken) return;
+    await upsertIntegrationConnection({
+      userId,
+      provider: "google",
+      accessToken: account.accessToken,
+      refreshToken: account.refreshToken,
+      tokenExpiresAt: account.accessTokenExpiresAt ?? null,
+      scopes: account.scope ?? "",
+    });
+  } catch (err) {
+    // Log but never crash the auth flow
+    console.error("[auth] Failed to capture Google tokens into integration_connections:", err);
+  }
+}
+
+// ─── Database hooks ───────────────────────────────────────────────────────────
 // self-hosted: dual-gate email allowlist on user.create and session.create
 // cloud:       no allowlist — subscription check will be added here when billing is built
+//
+// session.create.after fires on every sign-in. We use it to sync the Google
+// OAuth tokens from Better Auth's accounts table into integration_connections
+// (encrypted). This is the only supported hook that reliably fires post-OAuth.
+
 const databaseHooks = mode === "self-hosted"
   ? {
       user: {
@@ -66,6 +100,9 @@ const databaseHooks = mode === "self-hosted"
             });
             assertAllowedEmail(user?.email);
           },
+          after: async (session: { userId: string }) => {
+            await captureGoogleTokensForUser(session.userId);
+          },
         },
       },
     }
@@ -75,6 +112,13 @@ const databaseHooks = mode === "self-hosted"
         create: {
           before: async (_user: { email: string }) => {
             // TODO: enforce subscription check when billing is built
+          },
+        },
+      },
+      session: {
+        create: {
+          after: async (session: { userId: string }) => {
+            await captureGoogleTokensForUser(session.userId);
           },
         },
       },
@@ -95,12 +139,16 @@ export const auth = betterAuth({
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      scopes: [
-        "openid",
-        "email",
-        "profile",
-        // Gmail + Calendar scopes added here when integrations are built
+      scope: [
+        // Gmail — read-only access to messages and metadata
+        "https://www.googleapis.com/auth/gmail.readonly",
+        // Calendar — read/write for event creation (block time, etc.)
+        "https://www.googleapis.com/auth/calendar",
       ],
+      // Required for Google to issue a refresh token
+      accessType: "offline",
+      // Force consent screen every time so scopes are always granted
+      prompt: "consent",
     },
   },
   session: {

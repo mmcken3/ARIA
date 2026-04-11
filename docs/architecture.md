@@ -15,7 +15,7 @@ It is not a chatbot wrapper. It is not a task app. It is both, plus an agentic b
 
 **Reactive** — You ask, ARIA responds with full context (tasks, inbox, calendar). Not a blank prompt — ARIA knows your state before you type.
 
-**Scheduled / Proactive** — Background jobs run on cron: morning brief (7am local), sync jobs every 3 minutes. Delivered via browser push notification.
+**Scheduled / Proactive** — Background jobs run on cron: morning brief (7am local, planned), sync jobs every 10 minutes. Delivered via browser push notification (planned).
 
 **Event-driven** — Incremental sync via Gmail history API and Google Calendar sync tokens. New messages and events appear in context within minutes.
 
@@ -28,7 +28,7 @@ It is not a chatbot wrapper. It is not a task app. It is both, plus an agentic b
 | Framework | Next.js 16, App Router, TypeScript | Full-stack, file-based routing |
 | Auth | Better Auth + Google OAuth | Single-user allowlist via `ALLOWED_EMAIL` |
 | Database | PostgreSQL (Neon) + Drizzle ORM | Schema managed via `drizzle-kit push` |
-| Background Jobs | Inngest | Live — gcal-sync + gmail-sync run every 3 min |
+| Background Jobs | Inngest | Live — gcal-sync + gmail-sync run every 10 min |
 | AI | Anthropic Claude via `lib/ai/provider.ts` | Abstracted — swappable |
 | Notifications | Web Push API (VAPID) | Planned |
 | Styling | Tailwind CSS + CSS custom properties | All values via design tokens |
@@ -127,8 +127,8 @@ All tables are live in Neon:
 
 **Background sync** (`lib/jobs/`)
 
-- `gcal-sync`: Inngest cron every 3 minutes, fans out to all active Google connections
-- `gmail-sync`: Inngest cron every 3 minutes, same pattern
+- `gcal-sync`: Inngest cron every 10 minutes, fans out to all active Google connections
+- `gmail-sync`: Inngest cron every 10 minutes, same pattern
 - Per-user errors are caught and logged; one user failing never crashes others
 - Failed connections marked `status=error` in DB, surfaced in Settings UI
 

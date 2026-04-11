@@ -13,7 +13,7 @@ The tool was mostly developed with CLAUDE code, with some additional tweaks loca
 - **Chat-first interface** — Talk to ARIA about your work. It already knows your tasks, remembered context, and (once connected) your inbox and calendar.
 - **Task management** — Kanban board and list view with projects, priorities, and due dates. ARIA can create and update tasks directly from chat.
 - **Persistent memory** — ARIA remembers facts across sessions. You can view and delete what it knows in Settings.
-- **Proactive layer** — Background jobs (coming soon) poll Gmail and Calendar and surface what matters before you ask.
+- **Proactive layer** — Background jobs poll Gmail and Calendar every 10 minutes and surface what matters before you ask.
 
 ## Stack
 

@@ -41,13 +41,19 @@ const log = {
   warn:  (...args: unknown[]) => console.warn("[gmail]", ...args),  // warnings always on
 };
 
-// Always skip — no signal value regardless of other labels
-const ALWAYS_SKIP = new Set(["SPAM", "TRASH", "CATEGORY_PROMOTIONS"]);
+// Always skip — no signal value regardless of other labels.
+// CATEGORY_SOCIAL is unconditional: no social platform notification belongs
+// in an AI work assistant, even if Gmail marks it as important.
+const ALWAYS_SKIP = new Set([
+  "SPAM", "TRASH", "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL",
+]);
 
-// Skip these category labels only when Gmail also didn't flag the message as
-// IMPORTANT and the user didn't STAR it. A GitHub PR review request or Stripe
-// invoice can land in CATEGORY_UPDATES but still be work-relevant.
-const SOFT_SKIP = new Set(["CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]);
+// Skip these category labels unless the user explicitly starred the message.
+// NOTE: IMPORTANT is NOT a bypass here — Gmail's importance classifier is too
+// permissive on automated senders. Only a deliberate STARRED action counts.
+// Exception for CATEGORY_UPDATES: a Stripe invoice or GitHub PR review can be
+// IMPORTANT and should still pass through (handled in shouldSkip below).
+const SOFT_SKIP = new Set(["CATEGORY_UPDATES", "CATEGORY_FORUMS"]);
 
 const MAX_ROWS_PER_USER = 50;
 const MAX_AGE_DAYS = 7;
@@ -113,13 +119,23 @@ function scoreRelevance(labels: string[], subject: string, isRead: boolean, from
   return Math.min(score, 1);
 }
 
-function shouldSkip(labels: string[]): boolean {
+function shouldSkip(labels: string[], hasUnsubscribeHeader = false): boolean {
   if (!labels.includes("INBOX")) return true;
   if (labels.some((l) => ALWAYS_SKIP.has(l))) return true;
 
-  // Soft-skip category emails that Gmail didn't consider important
+  // Bulk/notification mail almost always carries a List-Unsubscribe header.
+  // Skip unless the user explicitly starred it — IMPORTANT is not sufficient
+  // because Gmail's classifier fires on many automated senders.
+  if (hasUnsubscribeHeader && !labels.includes("STARRED")) return true;
+
+  // CATEGORY_UPDATES: allow through if IMPORTANT or STARRED (Stripe, GitHub, etc.)
+  // Other soft categories: require explicit STARRED — IMPORTANT is too noisy.
   const isSoftCategory = labels.some((l) => SOFT_SKIP.has(l));
-  if (isSoftCategory && !labels.includes("IMPORTANT") && !labels.includes("STARRED")) return true;
+  if (isSoftCategory) {
+    const isUpdates = labels.includes("CATEGORY_UPDATES");
+    const passes = labels.includes("STARRED") || (isUpdates && labels.includes("IMPORTANT"));
+    if (!passes) return true;
+  }
 
   return false;
 }
@@ -142,7 +158,7 @@ async function fetchAndStoreMessage(
   messageId: string
 ): Promise<{ stored: boolean; skipped?: string }> {
   const res = await googleFetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=List-Unsubscribe`,
     connection
   );
   if (!res.ok) {
@@ -152,10 +168,13 @@ async function fetchAndStoreMessage(
 
   const msg: GmailMessage = await res.json();
   const labels = msg.labelIds ?? [];
-
-  if (shouldSkip(labels)) return { stored: false, skipped: labels.join(",") };
-
   const headers = msg.payload?.headers ?? [];
+  const hasUnsubscribeHeader = !!parseHeader(headers, "List-Unsubscribe");
+
+  if (shouldSkip(labels, hasUnsubscribeHeader)) {
+    return { stored: false, skipped: labels.join(",") };
+  }
+
   const subject = parseHeader(headers, "Subject") ?? "(No subject)";
   const fromRaw = parseHeader(headers, "From") ?? "";
   const { name: fromName, address: fromAddress } = parseFrom(fromRaw);
